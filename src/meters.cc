@@ -1295,14 +1295,14 @@ void MeterCommonImplementation::processFieldExtractors(Telegram *t)
         if (!fi.hasMatcher())
         {
             // This field_info has not been matched to a dv_entry before!
-            debug("(meters) skipping field without matcher %s(%s)[%d]...\n",
+            debug("(meter) skipping field without matcher %s(%s)[%d]...\n",
                   fi.vname().c_str(),
                   toString(fi.xuantity()),
                   fi.index());
             continue;
         }
 
-        debug("(meters) trying field info %s(%s)[%d]...\n",
+        debug("(meter) trying field info %s(%s)[%d]...\n",
               fi.vname().c_str(),
               toString(fi.xuantity()),
               fi.index());
@@ -1321,7 +1321,7 @@ void MeterCommonImplementation::processFieldExtractors(Telegram *t)
                 }
                 else if (founds[&fi].count(dve) == 0 || fi.matcher().expectedToMatchAgainstMultipleEntries())
                 {
-                    debug("(meters) using field info %s(%s)[%d] to extract %s at offset %d\n",
+                    debug("(meter) using field info %s(%s)[%d] to extract %s at offset %d\n",
                           fi.vname().c_str(),
                           toString(fi.xuantity()),
                           fi.index(),
@@ -1381,7 +1381,7 @@ void MeterCommonImplementation::processFieldCalculators()
     {
         if (fi.hasFormula() && !fi.hasMatcher())
         {
-            debug("(meters) calculating field %s(%s)[%d]\n",
+            debug("(meter) calculating field %s(%s)[%d]\n",
                   fi.vname().c_str(),
                   toString(fi.xuantity()),
                   fi.index());
@@ -1884,13 +1884,13 @@ void MeterCommonImplementation::printMeter(Telegram *t,
             // This field info has matched against some dventries.
             for (DVEntry *dve : founds[&fi])
             {
-                debug("(meters) render field %s(%s %s)[%d] with dventry @%d key %s data %s\n",
+                debug("(meter) render field %s(%s %s)[%d] with dventry @%d key %s data %s\n",
                       fi.vname().c_str(), toString(fi.xuantity()), unitToStringLowerCase(fi.displayUnit()).c_str(), fi.index(),
                       dve->offset,
                       dve->dif_vif_key.str().c_str(),
                       dve->value.c_str());
                 string out = fi.renderJson(this, dve);
-                debug("(meters)             %s\n", out.c_str());
+                debug("(meter)             %s\n", out.c_str());
                 s += indent+out+","+newline;
             }
         }
@@ -1910,10 +1910,10 @@ void MeterCommonImplementation::printMeter(Telegram *t,
                 // No telegram entries found, but this field should be printed anyway.
                 // It will be printed with any value received from a previous telegram.
                 // Or if no value has been received, null.
-                debug("(meters) render field %s(%s)[%d] without dventry\n",
+                debug("(meter) render field %s(%s)[%d] without dventry\n",
                       fi.vname().c_str(), toString(fi.xuantity()), fi.index());
                 string out = fi.renderJson(this, NULL);
-                debug("(meters)             %s\n", out.c_str());
+                debug("(meter)             %s\n", out.c_str());
                 s += indent+out+","+newline;
             }
         }
@@ -2266,16 +2266,19 @@ void FieldInfo::performExtraction(Meter *m, Telegram *t, DVEntry *dve)
 {
     if (xuantity_ == Quantity::Text)
     {
+        debug("(meter) performing extraction of string...\n");
         // Extract a string.
         extractString(m, t, dve);
     }
     else if (hasFormula())
     {
+        debug("(meter) performing extraction of value w/ formula...\n");
         double value = formula_->calculate(displayUnit(), dve, m);
         m->setNumericValue(this, dve, displayUnit(), value);
     }
     else
     {
+        debug("(meter) performing extraction of numeric value...\n");
         // Extract a numeric.
         extractNumeric(m, t, dve);
     }
@@ -2326,6 +2329,8 @@ bool FieldInfo::extractNumeric(Meter *m, Telegram *t, DVEntry *dve)
     bool found = false;
     string key = matcher_.dif_vif_key.str();
 
+    debug("(sva) looking for key '%x' ...\n", key);
+
     if (dve == NULL)
     {
         if (key == "")
@@ -2348,12 +2353,16 @@ bool FieldInfo::extractNumeric(Meter *m, Telegram *t, DVEntry *dve)
     assert(dve != NULL);
     assert(key == "" || dve->dif_vif_key.str() == key);
 
+    debug("(sva) ... key '%x' found\n", key);
+    
     string field_name;
     if (isDebugEnabled())
     {
         field_name = generateFieldNameWithUnit(dve);
     }
 
+    debug("(sva) extracting value of type Double for field '%s' ... \n", field_name.c_str());
+    
     double extracted_double_value = NAN;
     if (dve->extractDouble(&extracted_double_value,
                            vifScaling() == VifScaling::Auto ||
@@ -2361,21 +2370,27 @@ bool FieldInfo::extractNumeric(Meter *m, Telegram *t, DVEntry *dve)
                            vifScaling() == VifScaling::NoneSigned ||
                            vifScaling() == VifScaling::AutoSigned))
     {
+        debug("(sva) extracted value '%f'\n", extracted_double_value);
         Unit decoded_unit = displayUnit();
+        debug("(sva) decode unit is '%s'\n", unitToStringLowerCase(decoded_unit).c_str());
         if (matcher_.vif_range == VIFRange::DateTime)
         {
+            debug("(sva) extracting DateTime ...\n");
             struct tm datetime;
             dve->extractDate(&datetime);
             time_t tmp = mktime(&datetime);
             string bbb = strdatetime(tmp);
             extracted_double_value = tmp;
+            debug("(sva) ... extracted value '%f' ('%s')\n", extracted_double_value, bbb);
         }
         else if (matcher_.vif_range == VIFRange::Date)
         {
+            debug("(sva) extracting Date ...\n");
             struct tm date;
             dve->extractDate(&date);
             time_t tmp = mktime(&date);
             extracted_double_value = tmp;
+            debug("(sva) ... extracted value '%f'\n", extracted_double_value);
         }
         else if (matcher_.vif_range == VIFRange::AnyEnergyVIF ||
                  matcher_.vif_range == VIFRange::AnyVolumeVIF ||
@@ -2383,12 +2398,14 @@ bool FieldInfo::extractNumeric(Meter *m, Telegram *t, DVEntry *dve)
         {
             // Find the actual unit used in the telegram.
             decoded_unit = toDefaultUnit(dve->vif);
+            debug("(sva) unit from telegram is '%s'\n", unitToStringLowerCase(decoded_unit).c_str());
         }
         else if (matcher_.vif_range != VIFRange::Any &&
                  matcher_.vif_range != VIFRange::None)
         {
             // Pick the default unit for this range.
             decoded_unit = toDefaultUnit(matcher_.vif_range);
+            debug("(sva) default unit from telegram is '%x'\n", unitToStringLowerCase(decoded_unit).c_str());
         }
 
         debug("(meter) %s %s decoded %s default %s value %g (scale %g)\n",

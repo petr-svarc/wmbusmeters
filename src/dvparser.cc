@@ -28,7 +28,7 @@
 // The parser should not crash on invalid data, but yeah, when I
 // need to debug it because it crashes on invalid data, then
 // I enable the following define...
-//#define DEBUG_PARSER(...) fprintf(stdout, __VA_ARGS__)
+// #define DEBUG_PARSER(...) fprintf(stdout, __VA_ARGS__)
 #define DEBUG_PARSER(...)
 
 using namespace std;
@@ -241,7 +241,7 @@ bool parseDV(Telegram *t,
 
             if (index >= force_mfct_index)
             {
-                DEBUG_PARSER("(dvparser) manufacturer specific data, parsing is done.\n", dif);
+                DEBUG_PARSER("(dvparser) manufacturer specific data, parsing is done.\n");
                 size_t datalen = std::distance(data, data_end);
                 string value = bin2hex(data, data_end, datalen);
                 t->addExplanationAndIncrementPos(data, datalen, KindOfData::CONTENT, Understanding::NONE, "manufacturer specific data %s", value.c_str());
@@ -795,6 +795,9 @@ bool is_all_F(string &v)
 
 bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
 {
+    debug("(sva - extract value) starting ...\n");
+    debug("(sva - extract value) value is '%x' (hex)\n", value);
+
     int t = dif_vif_key.dif() & 0xf;
     if (t == 0x0 ||
         t == 0x8 ||
@@ -819,21 +822,25 @@ bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
         bool negate = false;
         uint64_t negate_mask = 0;
         if (t == 0x1) {
+            debug("(sva - extract value) t == 0x1\n");
             if (!checkSizeHex(2, dif_vif_key, value)) return false;
             assert(v.size() == 1);
             raw = v[0];
             if (assume_signed && (raw & (uint64_t)0x80UL) != 0) { negate = true; negate_mask = ~((uint64_t)0)<<8; }
         } else if (t == 0x2) {
+            debug("(sva - extract value) t == 0x2\n");
             if (!checkSizeHex(4, dif_vif_key, value)) return false;
             assert(v.size() == 2);
             raw = v[1]*256 + v[0];
             if (assume_signed && (raw & (uint64_t)0x8000UL) != 0) { negate = true; negate_mask = ~((uint64_t)0)<<16; }
         } else if (t == 0x3) {
+            debug("(sva - extract value) t == 0x3\n");
             if (!checkSizeHex(6, dif_vif_key, value)) return false;
             assert(v.size() == 3);
             raw = v[2]*256*256 + v[1]*256 + v[0];
             if (assume_signed && (raw & (uint64_t)0x800000UL) != 0) { negate = true; negate_mask = ~((uint64_t)0)<<24; }
         } else if (t == 0x4) {
+            debug("(sva - extract value) t == 0x4\n");
             if (!checkSizeHex(8, dif_vif_key, value)) return false;
             assert(v.size() == 4);
             raw = ((unsigned int)v[3])*256*256*256
@@ -842,6 +849,7 @@ bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
                 + ((unsigned int)v[0]);
             if (assume_signed && (raw & (uint64_t)0x80000000UL) != 0) { negate = true; negate_mask = ~((uint64_t)0)<<32; }
         } else if (t == 0x6) {
+            debug("(sva - extract value) t == 0x6\n");
             if (!checkSizeHex(12, dif_vif_key, value)) return false;
             assert(v.size() == 6);
             raw = ((uint64_t)v[5])*256*256*256*256*256
@@ -852,6 +860,7 @@ bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
                 + ((uint64_t)v[0]);
             if (assume_signed && (raw & (uint64_t)0x800000000000UL) != 0) { negate = true; negate_mask = ~((uint64_t)0)<<48; }
         } else if (t == 0x7) {
+            debug("(sva - extract value) t == 0x7\n");
             if (!checkSizeHex(16, dif_vif_key, value)) return false;
             assert(v.size() == 8);
             raw = ((uint64_t)v[7])*256*256*256*256*256*256*256
@@ -885,6 +894,7 @@ bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
         // 74140000 -> 00001474
         string& v = value;
         uint64_t raw = 0;
+        uint64_t sva_raw = 0;
         bool negate = false;
 
         if (is_all_F(v))
@@ -893,28 +903,45 @@ bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
             return false;
         }
         if (t == 0x9) {
+            debug("(sva - extract value) t == 0x9\n");
             if (!checkSizeHex(2, dif_vif_key, v)) return false;
             if (assume_signed && v[0] == 'F') { negate = true; v[0] = '0'; }
             raw = (v[0]-'0')*10 + (v[1]-'0');
         } else if (t ==  0xA) {
+            debug("(sva - extract value) t == 0xA\n");
             if (!checkSizeHex(4, dif_vif_key, v)) return false;
             if (assume_signed && v[2] == 'F') { negate = true; v[2] = '0'; }
             raw = (v[2]-'0')*10*10*10 + (v[3]-'0')*10*10
                 + (v[0]-'0')*10 + (v[1]-'0');
         } else if (t ==  0xB) {
+            debug("(sva - extract value) t == 0xB\n");
             if (!checkSizeHex(6, dif_vif_key, v)) return false;
             if (assume_signed && v[4] == 'F') { negate = true; v[4] = '0'; }
             raw = (v[4]-'0')*10*10*10*10*10 + (v[5]-'0')*10*10*10*10
                 + (v[2]-'0')*10*10*10 + (v[3]-'0')*10*10
                 + (v[0]-'0')*10 + (v[1]-'0');
         } else if (t ==  0xC) {
+            debug("(sva - extract value) t == 0xC\n");
+            debug("(sva - extract value) values is '%i %i %i %i %i %i %i %i'\n", v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]);
+            debug("(sva - extract value) values is '%c%c%c%c%c%c%c%c'\n", char(v[0]), char(v[1]), char(v[2]), char(v[3]), char(v[4]), char(v[5]), char(v[6]), char(v[7]));
+            debug("(sva - extract value) values is '%c%c%c%c%c%c%c%c'\n", char(v[6]), char(v[7]), char(v[4]), char(v[5]), char(v[2]), char(v[3]), char(v[0]), char(v[1]));
             if (!checkSizeHex(8, dif_vif_key, v)) return false;
             if (assume_signed && v[6] == 'F') { negate = true; v[6] = '0'; }
             raw = (v[6]-'0')*10*10*10*10*10*10*10 + (v[7]-'0')*10*10*10*10*10*10
                 + (v[4]-'0')*10*10*10*10*10 + (v[5]-'0')*10*10*10*10
                 + (v[2]-'0')*10*10*10 + (v[3]-'0')*10*10
                 + (v[0]-'0')*10 + (v[1]-'0');
+            
+            sva_raw = ((v[6] == 'F') ? 15 : (v[6] == 'E') ? 14 : (v[6] == 'D') ? 13 : (v[6] == 'C') ? 12 : (v[6] == 'B') ? 11 : (v[6] == 'A') ? 10 : (v[6]-'0'))*16*16*16*16*16*16*16
+                    + ((v[7] == 'F') ? 15 : (v[7] == 'E') ? 14 : (v[7] == 'D') ? 13 : (v[7] == 'C') ? 12 : (v[7] == 'B') ? 11 : (v[7] == 'A') ? 10 : (v[7]-'0'))*16*16*16*16*16*16
+                    + ((v[4] == 'F') ? 15 : (v[4] == 'E') ? 14 : (v[4] == 'D') ? 13 : (v[4] == 'C') ? 12 : (v[4] == 'B') ? 11 : (v[4] == 'A') ? 10 : (v[4]-'0'))*16*16*16*16*16
+                    + ((v[5] == 'F') ? 15 : (v[5] == 'E') ? 14 : (v[6] == 'D') ? 13 : (v[5] == 'C') ? 12 : (v[5] == 'B') ? 11 : (v[5] == 'A') ? 10 : (v[5]-'0'))*16*16*16*16
+                    + ((v[2] == 'F') ? 15 : (v[2] == 'E') ? 14 : (v[2] == 'D') ? 13 : (v[2] == 'C') ? 12 : (v[2] == 'B') ? 11 : (v[2] == 'A') ? 10 : (v[2]-'0'))*16*16*16
+                    + ((v[3] == 'F') ? 15 : (v[3] == 'E') ? 14 : (v[3] == 'D') ? 13 : (v[3] == 'C') ? 12 : (v[3] == 'B') ? 11 : (v[3] == 'A') ? 10 : (v[3]-'0'))*16*16
+                    + ((v[0] == 'F') ? 15 : (v[0] == 'E') ? 14 : (v[0] == 'D') ? 13 : (v[0] == 'C') ? 12 : (v[0] == 'B') ? 11 : (v[0] == 'A') ? 10 : (v[0]-'0'))*16
+                    + ((v[1] == 'F') ? 15 : (v[1] == 'E') ? 14 : (v[1] == 'D') ? 13 : (v[1] == 'C') ? 12 : (v[1] == 'B') ? 11 : (v[1] == 'A') ? 10 : (v[1]-'0'));
         } else if (t ==  0xE) {
+            debug("(sva - extract value) t == 0xE\n");
             if (!checkSizeHex(12, dif_vif_key, v)) return false;
             if (assume_signed && v[10] == 'F') { negate = true; v[10] = '0'; }
             raw =(v[10]-'0')*10*10*10*10*10*10*10*10*10*10*10 + (v[11]-'0')*10*10*10*10*10*10*10*10*10*10
@@ -924,18 +951,24 @@ bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
                 + (v[2]-'0')*10*10*10 + (v[3]-'0')*10*10
                 + (v[0]-'0')*10 + (v[1]-'0');
         }
+        debug("(sva - extract value) raw value is '%i'\n", raw);
+        debug("(sva - extract value) sva_raw value is '%i'\n", sva_raw);
         double scale = 1.0;
         double draw = (double)raw;
+        debug("(sva - extract value) draw value is '%f'\n", draw);
         if (negate)
         {
             draw = (double)draw * -1;
+            debug("(sva - extract value) draw value is negated '%f'\n", draw);
         }
         if (auto_scale) scale = vifScale(dif_vif_key.vif());
+        debug("(sva - extract value) out value is '%f'\n", (draw) / scale);
         *out = (draw) / scale;
     }
     else
     if (t == 0x5) // 32 Bit Real
     {
+        debug("(sva - extract value) t == 0x5\n");
         vector<uchar> v;
         hex2bin(value, &v);
         if (!checkSizeHex(8, dif_vif_key, value)) return false;
@@ -958,6 +991,7 @@ bool DVEntry::extractDouble(double *out, bool auto_scale, bool assume_signed)
         return false;
     }
 
+    debug("(sva - extract value) ... done\n");
     return true;
 }
 
