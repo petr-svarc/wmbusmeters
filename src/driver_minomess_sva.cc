@@ -178,17 +178,46 @@ namespace
 
     void Driver::processContent(Telegram *t)
     {
+        map<string,pair<int,DVEntry>> dv_entries = t->dv_entries;
         string key;
         int offset;
-        string total_water_consumption_m3_;
+        string v;
+        int64_t volume_;
 
         debug("(minomess_sva - process content) processing content ...\n");
 
-        if(findKey(MeasurementType::Instantaneous, VIFRange::Volume, StorageNr(8), 0, &key, &t->dv_entries)) {
-            debug("(minomess_sva - process content) found key ...\n");
-            extractDVReadableString(&t->dv_entries, key, &offset, &total_water_consumption_m3_);
-            debug("(minomess_sva - process content) extracted value '%s'\n", total_water_consumption_m3_);
-            debug("(minomess_sva - process content) extracted value '%#X' (hex)\n", total_water_consumption_m3_);
+        // if(findKey(MeasurementType::Instantaneous, VIFRange::Volume, StorageNr(8), 0, &key, &t->dv_entries)) {
+        if(findKey(MeasurementType::Instantaneous, VIFRange::Volume, StorageNr(8), 0, &key, &dv_entries)) {
+            // get the DVEntry for the found key
+            pair<int,DVEntry>&  p = (dv_entries)[key];
+
+            debug("(minomess_sva - process content) found key '%s'...\n", key);
+            extractDVReadableString(&t->dv_entries, key, &offset, &v);
+            debug("(minomess_sva - process content) extracted value is '%c%c%c%c%c%c%c%c'\n", char(v[0]), char(v[1]), char(v[2]), char(v[3]), char(v[4]), char(v[5]), char(v[6]), char(v[7]));
+            debug("(minomess_sva - process content) extracted value converted to integers is '%i %i %i %i %i %i %i %i'\n", char2int(char(v[0])), char2int(char(v[1])), char2int(char(v[2])), char2int(char(v[3])), char2int(char(v[4])), char2int(char(v[5])), char2int(char(v[6])), char2int(char(v[7])));
+
+            // convert to integer value
+            volume_ =   char2int(char(v[0]))*16*16*16*16*16*16*16
+                      + char2int(char(v[1]))*16*16*16*16*16*16
+                      + char2int(char(v[2]))*16*16*16*16*16
+                      + char2int(char(v[3]))*16*16*16*16
+                      + char2int(char(v[4]))*16*16*16
+                      + char2int(char(v[5]))*16*16
+                      + char2int(char(v[6]))*16
+                      + char2int(char(v[7]));
+            debug("(minomess_sva - process content) extracted value converted to integer is '%i'\n", volume_);
+
+            double scale = vifScale(p.second.dif_vif_key.vif());
+            debug("(minomess_sva - process content) scale is '%f'\n", scale);
+            debug("(minomess_sva - process content) scaled value is '%f'\n", ((double) volume_) / scale);
+
+            debug("(minomess_sva - process content) as usual: %s %s decoded %s value %g (scale %g)\n",
+                toString(VIFRange::Volume),
+                "My Field",
+                unitToStringLowerCase(toDefaultUnit(p.second.vif)).c_str(),
+                ((double) volume_) / scale,
+                scale);
+
             // t->addMoreExplanation(offset, " total consumption (%f m3)", total_water_consumption_m3_);
         }
 
