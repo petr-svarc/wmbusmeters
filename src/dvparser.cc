@@ -1186,6 +1186,7 @@ bool DVEntry::extractReadableString(string *out)
 
     string v = value;
 
+    debug("(sva - extractReadableString) original value is '%x' (hex)\n", v);
     debug("(sva - extractReadableString) original value is '%c%c%c%c%c%c%c%c'\n", char(v[0]), char(v[1]), char(v[2]), char(v[3]), char(v[4]), char(v[5]), char(v[6]), char(v[7]));
 
     if (t == 0x1 || // 8 Bit Integer/Binary
@@ -1203,10 +1204,12 @@ bool DVEntry::extractReadableString(string *out)
             // 44434241 and will be reversed to: 41424344 and translated using ascii
             // to ABCD
             v = reverseBinaryAsciiSafeToString(v);
+            debug("(sva - extractReadableString) reverseBinaryAsciiSafeToString\n");
         }
         else
         {
             v = reverseBCD(v);
+            debug("(sva - extractReadableString) reverseBCD\n");
         }
     }
     if (t == 0x9 || // 2 digit BCD

@@ -16,7 +16,30 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <cmath>
 #include"meters_common_implementation.h"
+
+int64_t convertString2Integer(string v) {
+    int64_t int_val = 0;
+    int strlen = v.length();
+
+    debug("(minomess_sva - convertString2Integer) string length is: %d (%d)\n", v.length(), (int64_t) pow(16, strlen-1));
+    debug("(minomess_sva - convertString2Integer) extracted value is '%c%c%c%c%c%c%c%c'\n", char(v[0]), char(v[1]), char(v[2]), char(v[3]), char(v[4]), char(v[5]), char(v[6]), char(v[7]));
+    debug("(minomess_sva - convertString2Integer) extracted value converted to integers is:");
+    for (int i=0; i < strlen; i++) {
+        debug(" %i", char2int(char(v[i])));
+    }
+    debug("\n");
+
+    // convert to integer value
+    for (int i=0; i < strlen; i++) {
+        int_val += (int64_t) char2int(char(v[i])) * (int64_t) pow(16, strlen - 1 - i);
+        debug("(minomess_sva - convertString2Integer) processing %d. character, so far the value is: %d\n", i, int_val);
+        debug("(minomess_sva - convertString2Integer) %d, %d, %d\n", i, strlen, (int64_t) pow(16, strlen - 1 - i));
+    }
+    return int_val;
+}
+
 
 namespace
 {
@@ -27,12 +50,16 @@ namespace
     private:
 
         void processContent(Telegram *t);
+
+
+
     };
 
     static bool ok = registerDriver([](DriverInfo&di)
     {
         di.setName("minomess_sva");
-        di.setDefaultFields("name,id,total_m3,target_m3,status,timestamp");
+        // di.setDefaultFields("name,id,total_m3,target_m3,status,timestamp");
+        di.setDefaultFields("name,id,total_m3,target_m3,target_date,total_consumption_last_month_m3,last_month_date,total_consumption_prev_1_month_m3,status,timestamp");
         di.setMeterType(MeterType::WaterMeter);
         di.addLinkMode(LinkMode::C1);
         // di.addDetection(MANUFACTURER_ZRI, 0x07,  0x00);
@@ -66,6 +93,17 @@ namespace
         addStringFieldWithExtractor(
             "target_date",
             "Date when target water consumption was recorded.",
+            DEFAULT_PRINT_PROPERTIES,
+            FieldMatcher::build()
+            .set(MeasurementType::Instantaneous)
+            .set(VIFRange::Date)
+            .set(StorageNr(8))
+            );
+
+        // add last month date
+        addStringFieldWithExtractor(
+            "last_month_date",
+            "Date when previous month water consumption was recorded.",
             DEFAULT_PRINT_PROPERTIES,
             FieldMatcher::build()
             .set(MeasurementType::Instantaneous)
@@ -160,19 +198,30 @@ namespace
                 },
             });
 
-        addStringFieldWithExtractor(
-            "target2",
-            "The total water consumptions recorded at the beginning of previous months.",
+        // add consumption at the end of last month
+        addNumericField(
+            "total_consumption_last_month",
+            Quantity::Volume,
             DEFAULT_PRINT_PROPERTIES,
-            // Quantity::Volume,
-            // VifScaling::Auto,
-            FieldMatcher::build()
-            .set(MeasurementType::Instantaneous)
-            // .set(VIFRange::Volume)
-            .set(VIFRange::Any)
-            .set(StorageNr(8))
-            .add(VIFCombinable::InverseCompactProfile)
+            "The total water consumptions recorded at the end of previous month.",
+            Unit::M3
             );
+
+        // add consumption at the end of previous months
+        for (int i=1; i<15; i++) {
+            addNumericField(
+                tostrprintf("total_consumption_prev_%d_month", i),
+                Quantity::Volume,
+                DEFAULT_PRINT_PROPERTIES,
+                tostrprintf("The total water consumptions recorded at the end of previous month no. %d.", i),
+                Unit::M3
+                );
+            // addStringField(
+            //     tostrprintf("prev_%d_month_date", i),
+            //     tostrprintf("Date when previous month no. %d water consumption was recorded.", i),
+            //     DEFAULT_PRINT_PROPERTIES
+            //     );
+        }
 
     }
 
@@ -182,45 +231,99 @@ namespace
         string key;
         int offset;
         string v;
+        string mnthly_val = "000000";
+        double scale;
         int64_t volume_;
+        double scaled_volume_;
+        string field_name;
 
         debug("(minomess_sva - process content) processing content ...\n");
 
-        // if(findKey(MeasurementType::Instantaneous, VIFRange::Volume, StorageNr(8), 0, &key, &t->dv_entries)) {
         if(findKey(MeasurementType::Instantaneous, VIFRange::Volume, StorageNr(8), 0, &key, &dv_entries)) {
+            field_name = "total_consumption_last_month";
             // get the DVEntry for the found key
             pair<int,DVEntry>&  p = (dv_entries)[key];
 
-            debug("(minomess_sva - process content) found key '%s'...\n", key);
+            debug("(minomess_sva - process content) found key '%s'...\n", key.c_str());
             extractDVReadableString(&t->dv_entries, key, &offset, &v);
-            debug("(minomess_sva - process content) extracted value is '%c%c%c%c%c%c%c%c'\n", char(v[0]), char(v[1]), char(v[2]), char(v[3]), char(v[4]), char(v[5]), char(v[6]), char(v[7]));
-            debug("(minomess_sva - process content) extracted value converted to integers is '%i %i %i %i %i %i %i %i'\n", char2int(char(v[0])), char2int(char(v[1])), char2int(char(v[2])), char2int(char(v[3])), char2int(char(v[4])), char2int(char(v[5])), char2int(char(v[6])), char2int(char(v[7])));
 
             // convert to integer value
-            volume_ =   char2int(char(v[0]))*16*16*16*16*16*16*16
-                      + char2int(char(v[1]))*16*16*16*16*16*16
-                      + char2int(char(v[2]))*16*16*16*16*16
-                      + char2int(char(v[3]))*16*16*16*16
-                      + char2int(char(v[4]))*16*16*16
-                      + char2int(char(v[5]))*16*16
-                      + char2int(char(v[6]))*16
-                      + char2int(char(v[7]));
-            debug("(minomess_sva - process content) extracted value converted to integer is '%i'\n", volume_);
+            scale = vifScale(p.second.dif_vif_key.vif());
+            volume_ = convertString2Integer(v);
+            scaled_volume_ = ((double) volume_) / scale;
 
-            double scale = vifScale(p.second.dif_vif_key.vif());
+            debug("(minomess_sva - process content) extracted value converted to integer is '%i'\n", volume_);
             debug("(minomess_sva - process content) scale is '%f'\n", scale);
-            debug("(minomess_sva - process content) scaled value is '%f'\n", ((double) volume_) / scale);
+            debug("(minomess_sva - process content) scaled value is '%f'\n", scaled_volume_);
 
             debug("(minomess_sva - process content) as usual: %s %s decoded %s value %g (scale %g)\n",
                 toString(VIFRange::Volume),
-                "My Field",
+                field_name.c_str(),
                 unitToStringLowerCase(toDefaultUnit(p.second.vif)).c_str(),
-                ((double) volume_) / scale,
+                scaled_volume_,
                 scale);
 
-            // t->addMoreExplanation(offset, " total consumption (%f m3)", total_water_consumption_m3_);
+            t->addMoreExplanation(offset, " (%s: %f)", field_name.c_str(), scaled_volume_);
+            setNumericValue(field_name, toDefaultUnit(p.second.vif), scaled_volume_);
         }
 
+        if(findKeyWithNr(MeasurementType::Instantaneous, VIFRange::Volume, StorageNr(8), 0, 2, &key, &dv_entries)) {
+            // get the DVEntry for the found key
+            pair<int,DVEntry>&  p = (dv_entries)[key];
+
+            debug("(minomess_sva - process content) found key '%s'...\n", key.c_str());
+            extractDVReadableString(&dv_entries, key, &offset, &v);
+
+            debug("(minomess_sva - convertString2Integer) extracted value is '%c%c%c%c %c%c%c%c%c%c'\n", char(v[0]), char(v[1]), char(v[2]), char(v[3]), char(v[4]), char(v[5]), char(v[6]), char(v[7]), char(v[8]), char(v[9]));
+
+            debug("(minomess_sva - process content) extracted value is: 1234567890        20        3        40        50        60        70        80      88\n");
+            debug("(minomess_sva - process content) extracted value is: ");
+            for (int i=88; i>0; i=i-2) {
+                debug("%c%c", char(v[i-2]), char(v[i-1]));
+            }
+            debug("\n");
+            debug("(minomess_sva - process content) extracted value is: ");
+            for (int i=88; i>0; i--) {
+                debug("%c", char(v[i-1]));
+            }
+            debug("\n");
+
+            for (int i=0; i<14; i++) {
+                field_name = tostrprintf("total_consumption_prev_%d_month", (i+1));
+
+                mnthly_val[0] = v[78-i*6];
+                mnthly_val[1] = v[79-i*6];
+                mnthly_val[2] = v[80-i*6];
+                mnthly_val[3] = v[81-i*6];
+                mnthly_val[4] = v[82-i*6];
+                mnthly_val[5] = v[83-i*6];
+
+                debug("(minomess_sva - process content) processing %d. month\n", (i+1));
+                debug("(minomess_sva - process content) monthly value is '%c%c%c%c%c%c'\n", char(mnthly_val[0]), char(mnthly_val[1]), char(mnthly_val[2]), char(mnthly_val[3]), char(mnthly_val[4]), char(mnthly_val[5]));
+
+                // if the first value is '8', then it is an initial value and we don't want it
+                if (char(mnthly_val[0]) != '8') {
+                    // convert to integer value
+                    scale = vifScale(p.second.dif_vif_key.vif());
+                    volume_ = convertString2Integer(mnthly_val);
+                    scaled_volume_ = ((double) volume_) / scale;
+
+                    debug("(minomess_sva - process content) extracted value converted to integer is '%i'\n", volume_);
+                    debug("(minomess_sva - process content) scale is '%f'\n", scale);
+                    debug("(minomess_sva - process content) scaled value is '%f'\n", scaled_volume_);
+
+                    debug("(minomess_sva - process content) as usual: %s %s decoded %s value %g (scale %g)\n",
+                        toString(VIFRange::Volume),
+                        field_name.c_str(),
+                        unitToStringLowerCase(toDefaultUnit(p.second.vif)).c_str(),
+                        scaled_volume_,
+                        scale);
+
+                    t->addMoreExplanation(offset, " (%s: %f)", field_name.c_str(), scaled_volume_);
+                    setNumericValue(field_name, toDefaultUnit(p.second.vif), scaled_volume_);
+                }
+            }
+        }
     }
 }
 
