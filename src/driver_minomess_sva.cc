@@ -40,6 +40,41 @@ int64_t convertString2Integer(string v) {
     return int_val;
 }
 
+string getPreviousMonthDate(string dt_str) {
+    string year, month, day, new_dt_str;
+    int i_yr, i_mnth;
+
+    debug("(minomess_sva - getPreviousMonthDate): source string: %s\n", dt_str.c_str());
+
+    year = dt_str.substr(0, 4);
+    month = dt_str.substr(5, 2);
+    day = dt_str.substr(8, 2);
+
+    debug("(minomess_sva - getPreviousMonthDate): source string: %s\n", dt_str.c_str());
+    debug("(minomess_sva - getPreviousMonthDate): year string: %s\n", year.c_str());
+    debug("(minomess_sva - getPreviousMonthDate): month string: %s\n", month.c_str());
+    debug("(minomess_sva - getPreviousMonthDate): day string: %s\n", day.c_str());
+
+    i_yr = stoi(year);
+    i_mnth = stoi(month);
+
+    i_mnth -= 1;
+
+    if (i_mnth == 0) {
+        i_mnth = 12;
+        i_yr -= 1;
+    }
+
+    year = to_string(i_yr);
+    month = "0" + to_string(i_mnth);
+    month = month.substr(month.size() - 2);
+
+    new_dt_str = year + "-" + month + "-" + day;
+
+    debug("(minomess_sva - getPreviousMonthDate): new date is: %s\n", new_dt_str.c_str());
+
+    return new_dt_str;
+}
 
 namespace
 {
@@ -216,11 +251,11 @@ namespace
                 tostrprintf("The total water consumptions recorded at the end of previous month no. %d.", i),
                 Unit::M3
                 );
-            // addStringField(
-            //     tostrprintf("prev_%d_month_date", i),
-            //     tostrprintf("Date when previous month no. %d water consumption was recorded.", i),
-            //     DEFAULT_PRINT_PROPERTIES
-            //     );
+            addStringField(
+                tostrprintf("prev_%d_month_date", i),
+                tostrprintf("Date when previous month no. %d water consumption was recorded.", i),
+                DEFAULT_PRINT_PROPERTIES
+                );
         }
 
     }
@@ -236,6 +271,7 @@ namespace
         int64_t volume_;
         double scaled_volume_;
         string field_name;
+        string prev_month;
 
         debug("(minomess_sva - process content) processing content ...\n");
 
@@ -267,6 +303,9 @@ namespace
             setNumericValue(field_name, toDefaultUnit(p.second.vif), scaled_volume_);
         }
 
+        prev_month = getStringValue(findFieldInfo("target_date", Quantity::Text));
+        debug("(minomess_sva - process content) value of the 'target_date' variable is %s\n", prev_month.c_str());
+
         if(findKeyWithNr(MeasurementType::Instantaneous, VIFRange::Volume, StorageNr(8), 0, 2, &key, &dv_entries)) {
             // get the DVEntry for the found key
             pair<int,DVEntry>&  p = (dv_entries)[key];
@@ -289,8 +328,6 @@ namespace
             debug("\n");
 
             for (int i=0; i<14; i++) {
-                field_name = tostrprintf("total_consumption_prev_%d_month", (i+1));
-
                 mnthly_val[0] = v[78-i*6];
                 mnthly_val[1] = v[79-i*6];
                 mnthly_val[2] = v[80-i*6];
@@ -301,8 +338,14 @@ namespace
                 debug("(minomess_sva - process content) processing %d. month\n", (i+1));
                 debug("(minomess_sva - process content) monthly value is '%c%c%c%c%c%c'\n", char(mnthly_val[0]), char(mnthly_val[1]), char(mnthly_val[2]), char(mnthly_val[3]), char(mnthly_val[4]), char(mnthly_val[5]));
 
+                // figure out date of the previous month
+                prev_month = getPreviousMonthDate(prev_month);
+
                 // if the first value is '8', then it is an initial value and we don't want it
                 if (char(mnthly_val[0]) != '8') {
+                    // set field name for total consumption value
+                    field_name = tostrprintf("total_consumption_prev_%d_month", (i+1));
+
                     // convert to integer value
                     scale = vifScale(p.second.dif_vif_key.vif());
                     volume_ = convertString2Integer(mnthly_val);
@@ -321,6 +364,11 @@ namespace
 
                     t->addMoreExplanation(offset, " (%s: %f)", field_name.c_str(), scaled_volume_);
                     setNumericValue(field_name, toDefaultUnit(p.second.vif), scaled_volume_);
+
+                    // set field name for the month of the total consumption value
+                    field_name = tostrprintf("prev_%d_month_date", (i+1));
+                    t->addMoreExplanation(offset, " (%s: %f)", field_name.c_str(), prev_month);
+                    setStringValue(field_name, prev_month);
                 }
             }
         }
@@ -376,20 +424,30 @@ namespace
 
 // Test: Mino minomess_sva 15503451 NOKEY
 // telegram=|6644496A1064035514377251345015496A0007EE0050052F2F#0C1359000000026CBE2B82046CA12B8C0413FFFFFFFF8D0493132CFBFEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF02FD1700002F2F|
-// {"media":"water","meter":"minomess_sva","name":"Mino","id":"15503451","meter_date":"2021-11-30","total_m3":0.059,"target_date":"2021-11-01","status":"OK","timestamp":"1111-11-11T11:11:11Z"}
-// |Mino;15503451;0.059;null;OK;1111-11-11 11:11.11
+// {"media":"water","meter":"minomess_sva","name":"Mino","id":"15503451","total_m3":0.059,"total_consumption_last_month_m3":4294967.295,"total_consumption_prev_10_month_m3":16777.215,"total_consumption_prev_11_month_m3":16777.215,"total_consumption_prev_12_month_m3":16777.215,"total_consumption_prev_13_month_m3":16777.215,"total_consumption_prev_14_month_m3":16777.215,"total_consumption_prev_1_month_m3":16777.215,"total_consumption_prev_2_month_m3":16777.215,"total_consumption_prev_3_month_m3":16777.215,"total_consumption_prev_4_month_m3":16777.215,"total_consumption_prev_5_month_m3":16777.215,"total_consumption_prev_6_month_m3":16777.215,"total_consumption_prev_7_month_m3":16777.215,"total_consumption_prev_8_month_m3":16777.215,"total_consumption_prev_9_month_m3":16777.215,"last_month_date":"2021-11-01","meter_date":"2021-11-30","prev_10_month_date":"2021-01-01","prev_11_month_date":"2020-12-01","prev_12_month_date":"2020-11-01","prev_13_month_date":"2020-10-01","prev_14_month_date":"2020-09-01","prev_1_month_date":"2021-10-01","prev_2_month_date":"2021-09-01","prev_3_month_date":"2021-08-01","prev_4_month_date":"2021-07-01","prev_5_month_date":"2021-06-01","prev_6_month_date":"2021-05-01","prev_7_month_date":"2021-04-01","prev_8_month_date":"2021-03-01","prev_9_month_date":"2021-02-01","status":"OK","target_date":"2021-11-01","timestamp":"1111-11-11T11:11:11Z"}
+// |Mino;15503451;0.059;null;2021-11-01;4294967.295;2021-11-01;16777.215;OK;1111-11-11 11:11.11
 
 // Test: Minowired minomess_sva 57575757 NOKEY
 // telegram=|6874746808007257575757496A000712000000_0C7857575757046D2414DE280413000000000C943C000000004413FFFFFFFF426CFFFF840113FFFFFFFF82016CFFFFC40113FFFFFFFFC2016CFFFF840213FFFFFFFF82026CFFFF043B000000000422E62F000004260000000034220000000002FD1700001F5716|
-// {"media":"water","meter":"minomess_sva","name":"Minowired","id":"57575757","fabrication_no":"57575757","operating_time_h":0,"on_time_h":12262,"on_time_at_error_h":0,"meter_datetime":"2022-08-30 20:36","total_m3":0,"total_backward_m3":0,"volume_flow_m3h":0,"target_m3":4294967.295,"target_date":"2127-15-31","status":"OK","timestamp":"1111-11-11T11:11:11Z"}
-// |Minowired;57575757;0;4294967.295;OK;1111-11-11 11:11.11
+// {"media":"water","meter":"minomess_sva","name":"Minowired","id":"57575757","on_time_h":12262,"on_time_at_error_h":0,"operating_time_h":0,"target_m3":4294967.295,"total_m3":0,"total_backward_m3":0,"volume_flow_m3h":0,"fabrication_no":"57575757","meter_datetime":"2022-08-30 20:36","status":"OK","target_date":"2127-15-31","timestamp":"1111-11-11T11:11:11Z"}
+// |Minowired;57575757;0;4294967.295;2127-15-31;null;null;null;OK;1111-11-11 11:11.11
 
 // Test: Zenner_cold minomess_sva 21314151 NOKEY
 // telegram=|6644496A4425155518377251413121496A0116360050052F2F_0C1355000000026CEC2182046CE1218C0413000000808D0493132C33FE00008000008000008000008000008000008000008000008000008000008000008000008000008000008002FD1700002F2F|
-// {"media":"cold water","meter":"minomess_sva","name":"Zenner_cold","id":"21314151","meter_date":"2023-01-12","total_m3":0.055,"target_m3":80000,"target_date":"2023-01-01","status":"OK","timestamp":"1111-11-11T11:11:11Z"}
-// |Zenner_cold;21314151;0.055;80000;OK;1111-11-11 11:11.11
+// {"media":"cold water","meter":"minomess_sva","name":"Zenner_cold","id":"21314151","target_m3":80000,"total_m3":0.055,"total_consumption_last_month_m3":2147483.648,"last_month_date":"2023-01-01","meter_date":"2023-01-12","status":"OK","target_date":"2023-01-01","timestamp":"1111-11-11T11:11:11Z"}
+// |Zenner_cold;21314151;0.055;80000;2023-01-01;2147483.648;2023-01-01;null;OK;1111-11-11 11:11.11
 
 // Test: Zenner_warm minomess_sva 51413121 NOKEY
 // telegram=|6644496A8753155518377221314151496A0106300050052F2F_0C1357000000026CEC2182046CE1218C0413000000808D0493132C33FE00008000008000008000008000008000008000008000008000008000008000008000008000008000008002FD1700002F2F|
-// {"media":"warm water","meter":"minomess_sva","name":"Zenner_warm","id":"51413121","meter_date":"2023-01-12","total_m3":0.057,"target_m3":80000,"target_date":"2023-01-01","status":"OK","timestamp":"1111-11-11T11:11:11Z"}
-// |Zenner_warm;51413121;0.057;80000;OK;1111-11-11 11:11.11
+// {"media":"warm water","meter":"minomess_sva","name":"Zenner_warm","id":"51413121","target_m3":80000,"total_m3":0.057,"total_consumption_last_month_m3":2147483.648,"last_month_date":"2023-01-01","meter_date":"2023-01-12","status":"OK","target_date":"2023-01-01","timestamp":"1111-11-11T11:11:11Z"}
+// |Zenner_warm;51413121;0.057;80000;2023-01-01;2147483.648;2023-01-01;null;OK;1111-11-11 11:11.11
+
+// Test: Zenner_cold_hist minomess_sva 55245185 NOKEY
+// telegram=|6644496A8551245518377277865915496A0116DF0050052F2F_0C1314470100026C073482046C01348C0413DE3000008D0493132C33FE76030000008000008000008000008000008000008000008000008000008000008000008000008000008002FD1700002F2F|
+// {"media":"cold water","meter":"minomess_sva","name":"Zenner_cold_hist","id":"15598677","target_m3":3.221,"total_m3":14.714,"total_consumption_last_month_m3":12.51,"total_consumption_prev_1_month_m3":0.886,"last_month_date":"2024-04-01","meter_date":"2024-04-07","prev_1_month_date":"2024-03-01","status":"OK","target_date":"2024-04-01","timestamp":"1111-11-11T11:11:11Z"}
+// |Zenner_cold_hist;15598677;14.714;3.221;2024-04-01;12.51;2024-04-01;0.886;OK;1111-11-11 11:11.11
+
+// Test: Zenner_warm_hist minomess_sva 55212528 NOKEY
+// telegram=|6644496A2825215518377203081225496A0106D80050052F2F_0C1320640000026C073482046C01348C04139D1400008D0493132C33FED3010000008000008000008000008000008000008000008000008000008000008000008000008000008002FD1700002F2F|
+// {"media":"warm water","meter":"minomess_sva","name":"Zenner_warm_hist","id":"25120803","target_m3":1.51,"total_m3":6.42,"total_consumption_last_month_m3":5.277,"total_consumption_prev_1_month_m3":0.467,"last_month_date":"2024-04-01","meter_date":"2024-04-07","prev_1_month_date":"2024-03-01","status":"OK","target_date":"2024-04-01","timestamp":"1111-11-11T11:11:11Z"}
+// |Zenner_warm_hist;25120803;6.42;1.51;2024-04-01;5.277;2024-04-01;0.467;OK;1111-11-11 11:11.11
