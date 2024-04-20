@@ -367,7 +367,7 @@ namespace
 
                     // set field name for the month of the total consumption value
                     field_name = tostrprintf("prev_%d_month_date", (i+1));
-                    t->addMoreExplanation(offset, " (%s: %f)", field_name.c_str(), prev_month);
+                    t->addMoreExplanation(offset, " (%s: %s)", field_name.c_str(), prev_month.c_str());
                     setStringValue(field_name, prev_month);
                 }
             }
